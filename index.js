@@ -1,11 +1,11 @@
 const express = require("express");
 const { google } = require("googleapis");
-const keys = require("./keys.json");
 const cors = require("cors");
 const connect_db = require("./utils/connect_db");
 const Employee = require("./models/Employee");
-const { connect } = require("mongoose");
+const Admin = require("./models/Admin");
 const jwt = require("jsonwebtoken");
+const bcryptjs = require("bcryptjs");
 const verifyUser = require("./utils/verifyUser");
 //initialize express
 const app = express();
@@ -31,11 +31,11 @@ app.get("/", (request, response) => {
   response.send("Backend Working");
 });
 
-app.get("/slots/:week", verifyUser,async (req, res) => {
-  const {id} = req.user;
+app.get("/slots/:week", verifyUser, async (req, res) => {
+  const { id } = req.user;
   // now find the user with this id
 
-  const employee = await Employee.findOne({_id:id});
+  const employee = await Employee.findOne({ _id: id });
 
   const auth = new google.auth.GoogleAuth({
     keyFile: "keys.json", //the key file
@@ -60,9 +60,104 @@ app.get("/slots/:week", verifyUser,async (req, res) => {
   });
 
   const data = readData.data.values;
-  let total_count = data.slice(1).filter((emp)=>emp[3]===employee.email);
+  let total_count = data.slice(1).filter((emp) => emp[3] === employee.email);
   res.send(total_count);
 });
+
+app.get("/admin/slots/:week", async (req, res) => {
+  const auth = new google.auth.GoogleAuth({
+    keyFile: "keys.json", //the key file
+    //url to spreadsheets API
+    scopes: "https://www.googleapis.com/auth/spreadsheets",
+  });
+
+  //Auth client Object
+  const authClientObject = await auth.getClient();
+
+  const spreadsheetId = "1qLYw4HWU7X1JGKL_5zbGRv7gdoxkWnad8XelqGmNI0M";
+
+  const googleSheetsInstance = google.sheets({
+    version: "v4",
+    auth: authClientObject,
+  });
+
+  const readData = await googleSheetsInstance.spreadsheets.values.get({
+    auth, //auth object
+    spreadsheetId, // spreadsheet id
+    range: `Week${req.params.week}!A:F`, //range of cells to read from.
+  });
+
+  const data = readData.data.values;
+  res.status(200).send(data.slice(1));
+});
+
+app.post("/admin/create", async (req, res) => {
+  const { name, email, password } = req.body;
+
+  // step 1 :find a user with this email
+  const admin = await Admin.findOne({ email: email });
+  if (admin) {
+    return res.status(400).send("Admin already exists");
+  }
+  // step 2 : hash the password
+  const hashedPassword = await bcryptjs.hash(password, 12);
+  const newAdmin = new Admin({
+    name,
+    email,
+    password: hashedPassword,
+  });
+  newAdmin
+    .save()
+    .then(() => {
+      res.send("Admin created successfully");
+    })
+    .catch((e) => {
+      res.send(e);
+    });
+});
+
+app.post("/admin/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  // step 1 :find a user with this email
+  const admin = await Admin.findOne({ email: email });
+  if (!admin) {
+    return res.status(400).send("Admin not exits");
+  }
+  // step 2 : compare the password
+  const validPassword = await bcryptjs.compare(password, admin.password);
+  if (!validPassword) {
+    return res.status(400).send("Invalid email & password");
+  }
+  // step 3 : create a token
+  const token = jwt.sign({ id: admin._id }, "APP_SECRET");
+  res.send(token);
+});
+
+app.get(
+  "/admin/me",
+  (req, res, next) => {
+    const token = req.headers.authorization;
+    if (!token) {
+      return res.status(401).send("Access Denied");
+    }
+    try {
+      const decoded = jwt.verify(token, "APP_SECRET");
+      req.user = decoded;
+      next();
+    } catch (e) {
+      return res.status(400).send("Invalid Token");
+    }
+  },
+  async (req, res) => {
+    const { id } = req.user;
+    const admin = await Admin.findOne({ _id: id });
+    const resObj = {};
+    resObj.name = admin.name;
+    resObj.email = admin.email;
+    res.send(resObj);
+  }
+);
 
 app.post("/auth", async (req, res) => {
   const { email, name, picture } = req.body;
@@ -145,7 +240,7 @@ app.post(
       await googleSheetsInstance.spreadsheets.values.append({
         auth, //auth object
         spreadsheetId, //spreadsheet id
-        range: `Week${request.week}!A:E`, //sheet name and range of cells
+        range: `Week${request.week}!A:F`, //sheet name and range of cells
         valueInputOption: "USER_ENTERED", // The information will be passed according to what the usere passes in as date, number or text
         resource: {
           values: [
@@ -155,6 +250,7 @@ app.post(
               "WFH",
               request.employee.email,
               new Date().getTime(),
+              new Date(),
             ],
           ],
         },
@@ -168,7 +264,7 @@ app.post(
       await googleSheetsInstance.spreadsheets.values.append({
         auth, //auth object
         spreadsheetId, //spreadsheet id
-        range: `Week${request.week}!A:E`, //sheet name and range of cells
+        range: `Week${request.week}!A:F`, //sheet name and range of cells
         valueInputOption: "USER_ENTERED", // The information will be passed according to what the usere passes in as date, number or text
         resource: {
           values: [
@@ -178,6 +274,7 @@ app.post(
               "WFO",
               request.employee.email,
               new Date().getTime(),
+              new Date(),
             ],
           ],
         },
@@ -192,6 +289,6 @@ app.post(
 const PORT = process.env.PORT || 5000;
 
 //start server
-const server = app.listen(PORT, () => {
-  console.log(`Server started on port localhost:${PORT}`);
+app.listen(PORT, () => {
+  console.log(`Server started on  localhost:${PORT}`);
 });
