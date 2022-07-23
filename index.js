@@ -1,5 +1,7 @@
 const express = require("express");
+
 const { google } = require("googleapis");
+
 const cors = require("cors");
 const connect_db = require("./utils/connect_db");
 const Employee = require("./models/Employee");
@@ -12,6 +14,7 @@ const app = express();
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+const sheets = google.sheets("v4");
 
 // database connection
 
@@ -91,6 +94,68 @@ app.get("/admin/slots/:week", async (req, res) => {
   res.status(200).send(data.slice(1));
 });
 
+app.delete(
+  "/admin/slot/delete/:row/:week",
+  async (req, res, next) => {
+    const token = req.headers.authorization;
+    console.log(token);
+    if (!token) {
+      return res.status(401).send("Unauthorized");
+    }
+    try {
+      const decoded = jwt.verify(token, "APP_SECRET");
+      if (!decoded) {
+        return res.status(401).send("Unauthorized");
+      } else {
+        req.user = decoded;
+        next();
+      }
+    } catch (e) {
+      return res.status(401).send("Unauthorized");
+    }
+  },
+  async (req, res) => {
+    const { id, role } = req.user;
+    // is user is admin
+    if (role !== "admin") {
+      return res.status(401).send("Unauthorized");
+    }
+    const spreadsheetId = "1qLYw4HWU7X1JGKL_5zbGRv7gdoxkWnad8XelqGmNI0M";
+    const auth = new google.auth.GoogleAuth({
+      keyFile: "keys.json", //the key file
+      //url to spreadsheets API
+      scopes: "https://www.googleapis.com/auth/spreadsheets",
+    });
+
+    //Auth client Object
+    const authClientObject = await auth.getClient();
+    const request = {
+      // The ID of the spreadsheet to update.
+      spreadsheetId: spreadsheetId, // TODO: Update placeholder value.
+
+      // The A1 notation of the values to clear.
+      range: `Week${req.params.week}!A${req.params.row}:F${req.params.row}`, // TODO: Update placeholder value.
+
+      resource: {
+        // TODO: Add desired properties to the request body.
+      },
+
+      auth: authClientObject,
+    };
+
+    try {
+      const response = (await sheets.spreadsheets.values.clear(request)).data;
+      // TODO: Change code below to process the `response` object:
+      console.log(JSON.stringify(response, null, 2));
+      res.status(200).send({
+        message: "Slot deleted successfully",
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+);
+
 app.post("/admin/create", async (req, res) => {
   const { name, email, password } = req.body;
 
@@ -130,7 +195,7 @@ app.post("/admin/login", async (req, res) => {
     return res.status(400).send("Invalid email & password");
   }
   // step 3 : create a token
-  const token = jwt.sign({ id: admin._id }, "APP_SECRET");
+  const token = jwt.sign({ id: admin._id, role: "admin" }, "APP_SECRET");
   res.send(token);
 });
 

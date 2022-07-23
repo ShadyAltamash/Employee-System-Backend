@@ -14,6 +14,7 @@
     "cors": "^2.8.5",
     "ejs": "^3.1.8",
     "express": "^4.17.1",
+    "google-auth-library": "^8.1.1",
     "googleapis": "^74.1.0",
     "jsonwebtoken": "^8.5.1",
     "mongoose": "^6.4.0",
