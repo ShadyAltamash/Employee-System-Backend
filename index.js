@@ -259,14 +259,16 @@ app.post(
   verifyUser,
   async (req, res, next) => {
     const { id } = req.user;
-    const { weekOfMonth, day } = req.body;
+    const { weekOfMonth, day, date } = req.body;
     const employee = await Employee.findOne({ _id: id });
     req.employee = employee;
     req.week = weekOfMonth;
     req.day = day;
+    req.date = date;
     next();
   },
   async (request, response) => {
+    console.log(request.date);
     const auth = new google.auth.GoogleAuth({
       keyFile: "keys.json", //the key file
       //url to spreadsheets API
@@ -315,7 +317,7 @@ app.post(
               "WFH",
               request.employee.email,
               new Date().getTime(),
-              new Date(),
+              request.date,
             ],
           ],
         },
@@ -339,7 +341,7 @@ app.post(
               "WFO",
               request.employee.email,
               new Date().getTime(),
-              new Date(),
+              request.date,
             ],
           ],
         },
